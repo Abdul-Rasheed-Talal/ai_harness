@@ -14,24 +14,32 @@ config({
 });
 // const tools = [readTool]
 
-const { values } = parseArgs({
+const defaultProvider =
+  process.env.OPENROUTER_API_KEY || process.env.openrouter_api_key ? "openrouter" :
+  (process.env.GEMINI_API_KEY || process.env.GROK_API_KEY ? "gemini" :
+  (process.env.ANTHROPIC_API_KEY ? "anthropic" : "gemini"));
+
+const { values, positionals } = parseArgs({
   options: {
     prompt: { type: "string", short: "p" },
-    provider: { type: "string", default: "anthropic" },
+    provider: { type: "string", default: defaultProvider },
     model: { type: "string" },
   },
+  allowPositionals: true,
 });
 
-if (!values.prompt) {
+const prompt = values.prompt ?? (positionals.length > 0 ? positionals.join(" ") : undefined);
+
+if (!prompt) {
   console.error(
-    `no prompt sirr, mypi -p "prompt" --provider anthropic OR groq `,
+    `no prompt sirr, mypi -p "prompt" --provider openrouter OR gemini OR grok OR anthropic OR groq`,
   );
   process.exit(1);
 }
 
 const provider = getProvider(values.provider);
 const model = values.model ?? provider.defaultModel;
-const messages: Message[] = [{ role: "user", content: values.prompt }];
+const messages: Message[] = [{ role: "user", content: prompt }];
 
 await runAgent({
   provider,

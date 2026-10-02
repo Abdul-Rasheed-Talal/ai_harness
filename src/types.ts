@@ -3,7 +3,7 @@ export type StopReason = "stop" | "length" | "toolUse";
 
 
 export type TextBlock = {type:"text", text:string};
-export type ToolCallBlock = {type:"toolCall", id:string, name:string, arguments:Record<string, unknown>};
+export type ToolCallBlock = {type:"toolCall", id:string, name:string, arguments:Record<string, unknown>, extraContent?: unknown};
 export type ContentBlock = TextBlock|ToolCallBlock;
 
 export type UserMessage = { role: "user"; content: string };

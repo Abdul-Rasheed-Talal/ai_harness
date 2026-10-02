@@ -13,11 +13,17 @@ function toOpenAI(messages: Message[]): OpenAI.ChatCompletionMessageParam[] {
         content: text || null,
         // OpenAI wants the arguments as a JSON *string*
         tool_calls: calls.length
-          ? calls.map((c) => ({
-              id: c.id,
-              type: "function" as const,
-              function: { name: c.name, arguments: JSON.stringify(c.arguments) },
-            }))
+          ? calls.map((c) => {
+              const callObj: any = {
+                id: c.id,
+                type: "function" as const,
+                function: { name: c.name, arguments: JSON.stringify(c.arguments) },
+              };
+              if (c.extraContent) {
+                callObj.extra_content = c.extraContent;
+              }
+              return callObj;
+            })
           : undefined,
       };
     }
@@ -47,7 +53,7 @@ export function createOpenAICompat(name: string, baseURL: string, apiKey: string
           : undefined,
       });
       let text = "";
-      const calls: { id: string; name: string; args: string }[] = []; // slot = tool_calls[].index
+      const calls: { id: string; name: string; args: string; extraContent?: unknown }[] = [];
       let usage: Usage = { input: 0, output: 0 };
       let stopReason: StopReason = "stop";
       for await (const chunk of stream) {
@@ -58,8 +64,24 @@ export function createOpenAICompat(name: string, baseURL: string, apiKey: string
         }
         for (const tc of choice?.delta?.tool_calls ?? []) {
           // the first piece of a call brings id + name, later pieces only bring more arguments
-          calls[tc.index] ??= { id: tc.id ?? `call_${tc.index}`, name: tc.function?.name ?? "", args: "" };
-          calls[tc.index].args += tc.function?.arguments ?? "";
+          let existing = typeof tc.index === "number" ? calls[tc.index] : calls.find((c) => c && c.id === tc.id);
+          if (!existing) {
+            existing = {
+              id: tc.id ?? `call_${calls.length}`,
+              name: tc.function?.name ?? "",
+              args: "",
+              extraContent: (tc as any).extra_content,
+            };
+            if (typeof tc.index === "number") {
+              calls[tc.index] = existing;
+            } else {
+              calls.push(existing);
+            }
+          }
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.name = tc.function.name;
+          if ((tc as any).extra_content) existing.extraContent = (tc as any).extra_content;
+          existing.args += tc.function?.arguments ?? "";
         }
         if (choice?.finish_reason === "tool_calls") stopReason = "toolUse";
         else if (choice?.finish_reason === "length") stopReason = "length";
@@ -67,7 +89,7 @@ export function createOpenAICompat(name: string, baseURL: string, apiKey: string
       }
       const content: ContentBlock[] = text ? [{ type: "text", text }] : [];
       for (const c of calls) {
-        if (c) content.push({ type: "toolCall", id: c.id, name: c.name, arguments: c.args ? JSON.parse(c.args) : {} });
+        if (c) content.push({ type: "toolCall", id: c.id, name: c.name, arguments: c.args ? JSON.parse(c.args) : {}, extraContent: c.extraContent });
       }
       if (content.some((b) => b.type === "toolCall")) stopReason = "toolUse";
       yield { type: "done", message: { role: "assistant", content, usage, stopReason } };
